@@ -349,7 +349,6 @@ async def style_carte(itx: discord.Interaction, style: str):
     description="Créer la carte d'identité (pour vous ou @cible). Photo jointe si possible, sinon avatar."
 )
 @app_commands.describe(
-    cible="Membre pour qui créer la carte (laisser vide pour vous-même).",
     prenom="Prénom (ex. Charles)",
     nom="Nom de famille (ex. Jones)",
     titres="Titre(s) (ex. Comte/général)",
@@ -358,11 +357,12 @@ async def style_carte(itx: discord.Interaction, style: str):
     lieu_naissance="Lieu (ex. Paris)",
     nationalite="Nationalité (ex. Française)",
     metier="Métier (ex. fermier)",
-    photo="Photo du titulaire (pièce jointe conseillée ; sinon l’avatar sera utilisé)"
+    photo="Photo du titulaire (pièce jointe conseillée ; sinon l’avatar sera utilisé)",
+    cible="Membre pour qui créer la carte (laisser vide pour vous-même)."
+
 )
 async def generer_carte(
     itx: discord.Interaction,
-    cible: Optional[discord.Member] = None,
     prenom: str,
     nom: str,
     titres: str,
@@ -371,7 +371,8 @@ async def generer_carte(
     lieu_naissance: str,
     nationalite: str,
     metier: str,
-    photo: Optional[discord.Attachment] = None
+    photo: Optional[discord.Attachment] = None,
+    cible: Optional[discord.Member] = None
 ):
     await itx.response.defer()
     target = cible or itx.user
