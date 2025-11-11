@@ -1174,16 +1174,202 @@ async def remove_permit(itx: discord.Interaction,
         msg = f"ℹ️ **{item.value}** n’était pas enregistré pour **{target.display_name}**."
     await itx.response.send_message(msg)
 
+# ========= TRANSFERT D’ITEMS =========
+
+GIVE_CATEGORIES = [
+    app_commands.Choice(name="Armes", value="armes"),
+    app_commands.Choice(name="Chevaux", value="chevaux"),
+    app_commands.Choice(name="Permis", value="permis"),
+    app_commands.Choice(name="Propriétés", value="proprietes"),
+]
+
+def _parse_qty_for_transfer(txt: Optional[str], available: int, default_if_missing: int = 1) -> Optional[int]:
+    """
+    Pour armes/chevaux uniquement.
+    - None -> par défaut 1
+    - 'all'/'tout'/'toute' -> tout ce qui est dispo
+    - entier > 0
+    Retourne None si invalide.
+    """
+    if txt is None or str(txt).strip() == "":
+        return default_if_missing
+    t = str(txt).strip().lower()
+    if t in ("all", "tout", "toute"):
+        return int(max(0, available))
+    try:
+        n = int(t)
+        if n <= 0:
+            return None
+        return n
+    except Exception:
+        return None
+
+@bot.tree.command(
+    name="give_item",
+    description="Donner un item de votre inventaire à un joueur (armes, chevaux, permis, propriétés)."
+)
+@app_commands.describe(
+    beneficiaire="Membre qui reçoit l’item",
+    categorie="Catégorie de l’item (armes/chevaux/permis/propriétés)",
+    item="Nom exact de l’item (auto-complété selon votre inventaire)",
+    quantite="(Armes/Chevaux) Entier > 0 ou 'all'. Ignorer pour Permis/Propriétés."
+)
+@app_commands.choices(categorie=GIVE_CATEGORIES)
+async def give_item_cmd(
+    itx: discord.Interaction,
+    beneficiaire: discord.Member,
+    categorie: app_commands.Choice[str],
+    item: str,
+    quantite: Optional[str] = None
+):
+    donneur = itx.user
+    if donneur.id == beneficiaire.id:
+        await itx.response.send_message("On ne se transfère pas un item à soi-même…", ephemeral=True)
+        return
+
+    cat = categorie.value  # 'armes' | 'chevaux' | 'permis' | 'proprietes'
+
+    prof_d = _ensure_profile_skeleton(donneur.id)
+    prof_b = _ensure_profile_skeleton(beneficiaire.id)
+
+    inv_d = prof_d.get("inventaire", {}) or {}
+    inv_b = prof_b.get("inventaire", {}) or {}
+
+    # Normalise structures
+    inv_d.setdefault("armes", {}); inv_b.setdefault("armes", {})
+    inv_d.setdefault("chevaux", {}); inv_b.setdefault("chevaux", {})
+    inv_d.setdefault("permis", {}); inv_b.setdefault("permis", {})
+    prof_d["inventaire"] = inv_d; prof_b["inventaire"] = inv_b
+    prof_d.setdefault("proprietes", {}); prof_b.setdefault("proprietes", {})
+
+    # ----- Armes / Chevaux : transfert avec quantités -----
+    if cat in ("armes", "chevaux"):
+        source = inv_d[cat]
+        if item not in source:
+            await itx.response.send_message(f"L’item **{item}** n’est pas dans vos {cat}.", ephemeral=True)
+            return
+
+        dispo = int(source.get(item, 0))
+        if dispo <= 0:
+            await itx.response.send_message(f"Vous ne possédez plus de **{item}**.", ephemeral=True)
+            return
+
+        qty = _parse_qty_for_transfer(quantite, available=dispo, default_if_missing=1)
+        if qty is None or qty <= 0:
+            await itx.response.send_message("Quantité invalide (entier > 0 ou 'all').", ephemeral=True)
+            return
+        qty = min(qty, dispo)
+
+        # Décrémente donneur
+        reste = dispo - qty
+        if reste <= 0:
+            source.pop(item, None)
+        else:
+            source[item] = reste
+
+        # Incrémente bénéficiaire
+        inv_b[cat][item] = int(inv_b[cat].get(item, 0)) + qty
+
+        save_profile(donneur.id, prof_d)
+        save_profile(beneficiaire.id, prof_b)
+
+        await itx.response.send_message(
+            f"🎁 **Transfert** — {donneur.mention} ➜ {beneficiaire.mention}\n"
+            f"• {cat[:-1].capitalize()} : **{item}** × {qty}\n"
+            f"• Votre restant : {int(inv_d[cat].get(item, 0)) if item in inv_d[cat] else 0}"
+        )
+        return
+
+    # ----- Permis : présence/absence (pas de quantité) -----
+    if cat == "permis":
+        if item not in inv_d["permis"]:
+            await itx.response.send_message(f"Vous n’avez pas le permis **{item}**.", ephemeral=True)
+            return
+        if item in inv_b["permis"]:
+            await itx.response.send_message(f"{beneficiaire.display_name} possède déjà le permis **{item}**.", ephemeral=True)
+            return
+
+        inv_b["permis"][item] = "valide"
+        inv_d["permis"].pop(item, None)
+
+        save_profile(donneur.id, prof_d)
+        save_profile(beneficiaire.id, prof_b)
+
+        await itx.response.send_message(
+            f"🎁 **Transfert de permis** — {donneur.mention} ➜ {beneficiaire.mention}\n"
+            f"• Permis : **{item}** (désormais *valide* pour le bénéficiaire)"
+        )
+        return
+
+    # ----- Propriétés : présence/absence (pas de quantité) -----
+    if cat == "proprietes":
+        props_d = prof_d["proprietes"]
+        props_b = prof_b["proprietes"]
+
+        if item not in props_d:
+            await itx.response.send_message(f"Vous ne possédez pas la propriété **{item}**.", ephemeral=True)
+            return
+        if item in props_b:
+            await itx.response.send_message(f"{beneficiaire.display_name} possède déjà la propriété **{item}**.", ephemeral=True)
+            return
+
+        # Transfert : on conserve l’étiquette si elle existe, sinon 'acquise'
+        label = props_d.get(item, "acquise")
+        props_b[item] = label
+        props_d.pop(item, None)
+
+        save_profile(donneur.id, prof_d)
+        save_profile(beneficiaire.id, prof_b)
+
+        await itx.response.send_message(
+            f"🎁 **Transfert de propriété** — {donneur.mention} ➜ {beneficiaire.mention}\n"
+            f"• Propriété : **{item}**"
+        )
+        return
+
+    await itx.response.send_message("Catégorie inconnue.", ephemeral=True)
+
+# --- Autocomplete des items possédés par le donneur ---
+@give_item_cmd.autocomplete("item")
+async def give_item_item_autocomplete(interaction: discord.Interaction, current: str):
+    # Récupère la catégorie déjà sélectionnée dans la commande
+    cat = getattr(interaction.namespace, "categorie", None)
+    # Lorsque c’est un Choice, discord.py range directement la valeur (str)
+    if isinstance(cat, app_commands.Choice):
+        cat = cat.value
+    if cat not in ("armes", "chevaux", "permis", "proprietes"):
+        return []
+
+    prof = load_profile(interaction.user.id) or {}
+    inv  = (prof.get("inventaire") or {})
+    inv.setdefault("armes", {}); inv.setdefault("chevaux", {}); inv.setdefault("permis", {})
+    props = prof.get("proprietes", {}) or {}
+
+    if cat in ("armes", "chevaux"):
+        keys = list((inv[cat] or {}).keys())
+    elif cat == "permis":
+        keys = list((inv["permis"] or {}).keys())
+    else:  # proprietes
+        keys = list(props.keys())
+
+    cur = (current or "").lower()
+    if cur:
+        keys = [k for k in keys if cur in k.lower()]
+
+    keys.sort()
+    return [app_commands.Choice(name=k, value=k) for k in keys[:25]]
+
+
 # ========= JEU / RISQUE =========
 
 CRIME_CHOICES = [
-    app_commands.Choice(name="caleche",  value="caleche"),
+    app_commands.Choice(name="calèche",  value="calèche"),
     app_commands.Choice(name="commerce", value="commerce"),
     app_commands.Choice(name="train",    value="train"),
     app_commands.Choice(name="banque",   value="banque"),
 ]
 
-@bot.tree.command(name="crime", description="Commettre un braquage (caleche, commerce, train, banque). Cooldown 4h.")
+@bot.tree.command(name="crime", description="Commettre un braquage (calèche, commerce, train, banque). Cooldown 4h.")
 @app_commands.describe(cible="Type de cible : caleche, commerce, train, banque")
 @app_commands.choices(cible=CRIME_CHOICES)
 async def crime_cmd(itx: discord.Interaction, cible: app_commands.Choice[str]):
