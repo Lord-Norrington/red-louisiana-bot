@@ -40,25 +40,31 @@ load_dotenv()
 TOKEN    = os.getenv("TOKEN")
 GUILD_ID = os.getenv("GUILD_ID")
 
-# ---------- Keep-alive pour Render ----------
-from flask import Flask
+# ---------- Keep-alive POUR RENDER UNIQUEMENT ----------
 import threading
+try:
+    from flask import Flask
+except Exception:
+    Flask = None  # si Flask n'est pas installé en local
 
-_keep = Flask('')
+def _start_keepalive_if_needed():
+    # Sur Render, la variable d'env PORT est présente.
+    port = os.environ.get("PORT")
+    if not port or not Flask:
+        return
 
-@_keep.get("/")
-def _health():
-    return "bot alive"
+    app = Flask(__name__)
 
-def _run_keepalive():
-    # Render fournit PORT; défaut 3000 en local
-    import os
-    port = int(os.environ.get("PORT", 3000))
-    _keep.run(host="0.0.0.0", port=port)
+    @app.get("/")
+    def _health():
+        return "bot alive"
 
-# Lance le petit serveur HTTP en arrière-plan
-threading.Thread(target=_run_keepalive, daemon=True).start()
+    def _run():
+        app.run(host="0.0.0.0", port=int(port))
 
+    threading.Thread(target=_run, daemon=True).start()
+
+_start_keepalive_if_needed()
 
 # ---------- Bot ----------
 intents = discord.Intents.default()
@@ -443,7 +449,7 @@ async def generer_carte(
     }
     save_profile(target.id, profile_data)
 
-        # --- RESET COMPLET + ITEMS DE DÉPART ---
+    # --- RESET COMPLET + ITEMS DE DÉPART ---
     try:
         prof = _ensure_profile_skeleton(target.id)
         prof = _ensure_economy_fields(prof)
@@ -473,14 +479,12 @@ async def generer_carte(
     except Exception as e:
         print(f"Erreur reset inventaire de {target.id} : {e}")
 
-
     # Nettoyage de la photo temporaire
     try:
         if os.path.exists(temp_path): os.remove(temp_path)
     except Exception:
         pass
 
-    # ✅ FIX : message unique correctement formé (l'ancienne ligne cassée faisait planter le bot)
     await itx.followup.send(embed=embed(
         "Carte enregistrée",
         f"Carte de **{prenom} {nom}** enregistrée.\n"
@@ -1213,7 +1217,6 @@ async def work_cmd(itx: discord.Interaction):
         f"Gain : **{_fmt_money(gain)}** ajouté à votre compte bancaire.\n"
         f"Nouveau solde banque : **{_fmt_money(prof['bank'])}**"
     )
-
 
 # ========= LEADERBOARD =========
 
