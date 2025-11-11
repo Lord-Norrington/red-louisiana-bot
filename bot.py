@@ -1208,7 +1208,7 @@ async def remove_horse(itx: discord.Interaction,
 
 PROPRIETES_LISTE = [
     "Shady Bell","Calliga Hall","Bourbon's Manor","Palais Royal de Saint Denis",
-    "Manoir Bronte","Petite Maison","Moyenne Maison","Grande Maison",
+    "Manoir Bronte","Petite Maison","Moyenne Maison","Grande Maison","Emerald Ranch",
     "Saloon Saint Denis","Saloon Rhodes","Saloon Van Horn","Saloon Blackwater",
     "Armurerie Rhodes","Armurerie Saint Denis","Écurie Van Horn","Écurie Saint Denis","Distilerie","Entreprise",
 ]
@@ -2079,4 +2079,5 @@ if __name__ == "__main__":
     if not TOKEN:
         raise RuntimeError("TOKEN manquant dans .env (UTF-8)")
     bot.run(TOKEN)
+
 
