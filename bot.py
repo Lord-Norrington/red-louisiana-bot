@@ -362,7 +362,7 @@ async def style_carte(itx: discord.Interaction, style: str):
 )
 async def generer_carte(
     itx: discord.Interaction,
-    cible: Optional[discord.Member],
+    cible: str,
     prenom: str,
     nom: str,
     titres: str,
@@ -508,6 +508,129 @@ async def afficher_carte(itx: discord.Interaction, cible: Optional[discord.Membe
 
     await itx.followup.send(embed=embed("Carte d'identité", f"Carte de **{display}**"),
                             file=discord.File(save_path, filename=os.path.basename(save_path)))
+
+@bot.tree.command(
+    name="modifier_identite",
+    description="Mettre à jour Nom/Prénom/Titres/Métier et régénérer la carte (sans toucher à l’inventaire/économie)."
+)
+@app_commands.describe(
+    cible="Membre dont on modifie l'identité (laisser vide pour vous-même).",
+    prenom="Nouveau prénom (laisser vide pour ne pas changer)",
+    nom="Nouveau nom (laisser vide pour ne pas changer)",
+    titres="Nouveaux titres (laisser vide pour ne pas changer)",
+    metier="Nouveau métier (laisser vide pour ne pas changer)",
+    photo="Nouvelle photo optionnelle (PNG/JPG/WEBP). Sinon avatar actuel."
+)
+async def modifier_identite(
+    itx: discord.Interaction,
+    cible: Optional[discord.Member],
+    prenom: Optional[str] = None,
+    nom: Optional[str] = None,
+    titres: Optional[str] = None,
+    metier: Optional[str] = None,
+    photo: Optional[discord.Attachment] = None
+):
+    """
+    Met à jour uniquement les champs d'identité indiqués et régénère la carte PNG.
+    Ne réinitialise NI l'inventaire, NI l'économie, NI les propriétés, NI les cooldowns.
+    """
+    await itx.response.defer()
+
+    target = cible or itx.user
+    prof = load_profile(target.id)
+    if not prof:
+        await itx.followup.send(
+            embed=embed("Fiche introuvable", "Aucune fiche trouvée. Utilisez d’abord `/generer_carte`."),
+            ephemeral=True
+        )
+        return
+
+    # --- Appliquer les modifications demandées, sans toucher au reste ---
+    if prenom is not None and prenom.strip() != "":
+        prof["prenom"] = prenom.strip()
+    if nom is not None and nom.strip() != "":
+        prof["nom"] = nom.strip()
+    if titres is not None and titres.strip() != "":
+        prof["titres"] = titres.strip()
+    if metier is not None and metier.strip() != "":
+        prof["metier"] = metier.strip()
+
+    # Valeurs d’identité pour la génération d’image
+    data_img = {
+        "prenom":        prof.get("prenom", "—"),
+        "nom":           prof.get("nom", "—"),
+        "titres":        prof.get("titres", "—"),
+        "genre":         prof.get("genre", "—"),
+        "date_naissance":prof.get("date_naissance", "—"),
+        "lieu_naissance":prof.get("lieu_naissance", "—"),
+        "nationalite":   prof.get("nationalite", "—"),
+        "metier":        prof.get("metier", "—"),
+    }
+
+    # Préparer une image source : pièce jointe > avatar
+    img_bytes: Optional[bytes] = None
+    ext = ".png"
+    if photo is not None:
+        try:
+            img_bytes = await photo.read()
+            ext_att = os.path.splitext(photo.filename)[1].lower()
+            if ext_att in [".png", ".jpg", ".jpeg", ".webp"]:
+                ext = ext_att
+        except Exception:
+            img_bytes = None
+
+    if img_bytes is None:
+        try:
+            asset = target.display_avatar.replace(size=512, format="png")
+            img_bytes = await asset.read()
+            ext = ".png"
+        except Exception:
+            img_bytes = None  # on générera la carte sans photo si vraiment rien
+
+    temp_path = None
+    if img_bytes is not None:
+        try:
+            temp_path = os.path.join(ASSETS_DIR, f"photo_{target.id}{ext}")
+            with open(temp_path, "wb") as f:
+                f.write(img_bytes)
+            data_img["photo_path"] = temp_path
+        except Exception:
+            temp_path = None
+
+    # Générer la nouvelle carte
+    try:
+        png_bytes = generate_png_bytes(data_img, style_name=CURRENT_THEME["name"])
+        save_path = card_path_for(target.id)
+        with open(save_path, "wb") as f:
+            f.write(png_bytes)
+    except Exception as e:
+        # Nettoyage éventuel
+        if temp_path and os.path.exists(temp_path):
+            try: os.remove(temp_path)
+            except Exception: pass
+        await itx.followup.send(embed=embed("Erreur", f"Impossible de régénérer la carte : `{e}`"))
+        return
+
+    # Nettoyage de la photo temporaire (si utilisée)
+    if temp_path and os.path.exists(temp_path):
+        try: os.remove(temp_path)
+        except Exception: pass
+
+    # ÉCRITURE SÛRE DU PROFIL : on ne passe pas par save_profile() pour ne rien écraser
+    try:
+        with open(profile_path_for(target.id), "w", encoding="utf-8") as f:
+            json.dump(prof, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        await itx.followup.send(embed=embed("Avertissement", f"Carte régénérée, mais échec de sauvegarde du profil : `{e}`"))
+        return
+
+    await itx.followup.send(embed=embed(
+        "Identité mise à jour",
+        f"Carte régénérée pour **{prof.get('prenom','—')} {prof.get('nom','—')}**.\n"
+        f"_Fichier :_ `cards/{target.id}.png`\n"
+        f"ℹ️ Inventaire, propriétés, économie et cooldowns **inchangés**."
+    ))
+
 
 @bot.tree.command(name="fiche_personnage", description="Afficher la fiche (identité, inventaires et propriétés).")
 @app_commands.describe(cible="Membre dont on veut afficher la fiche (laisser vide pour la vôtre).")
@@ -1086,7 +1209,7 @@ PROPRIETES_LISTE = [
     "Shady Bell","Calliga Hall","Bourbon's Manor","Palais Royal de Saint Denis",
     "Petite Maison","Moyenne Maison","Grande Maison",
     "Saloon Saint Denis","Saloon Rhodes","Saloon Van Horn","Saloon Blackwater",
-    "Armurerie Rhodes","Armurerie Saint Denis","Distilerie","Entreprise",
+    "Armurerie Rhodes","Armurerie Saint Denis","Écurie Van Horn","Écurie Saint Denis","Distilerie","Entreprise",
 ]
 
 @bot.tree.command(name="add_property", description="Ajouter une propriété au profil (sans quantité).")
