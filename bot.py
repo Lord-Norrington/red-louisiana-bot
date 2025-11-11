@@ -776,6 +776,144 @@ async def remove_money(
         f"→ Total (cash+banque+sale) : **{_fmt_money(total)}**"
     )
 
+# ---------- ÉCONOMIE : WITH / DEP / PAY / PAYCRIME ----------
+
+def _parse_amount_input(txt: str, available: int) -> Optional[int]:
+    """
+    Accepte un entier > 0 ou 'all'/'tout'/'toute' -> renvoie un int.
+    Retourne None si invalide.
+    """
+    if not isinstance(txt, str):
+        return None
+    t = txt.strip().lower()
+    if t in ("all", "tout", "toute"):
+        return int(max(0, available))
+    try:
+        n = int(t)
+        if n <= 0:
+            return None
+        return n
+    except Exception:
+        return None
+
+@bot.tree.command(name="with", description="Retirer de la banque vers le cash.")
+@app_commands.describe(montant='Montant (>0) ou "all"')
+async def with_cmd(itx: discord.Interaction, montant: str):
+    user = itx.user
+    prof = _ensure_profile_skeleton(user.id)
+    prof = _ensure_economy_fields(prof)
+
+    bank = int(prof.get("bank", 0))
+    amt = _parse_amount_input(montant, bank)
+    if amt is None:
+        await itx.response.send_message('Montant invalide. Utilisez un entier > 0 ou "all".', ephemeral=True)
+        return
+    if bank <= 0:
+        await itx.response.send_message("Votre compte bancaire est vide.", ephemeral=True)
+        return
+    if amt > bank:
+        await itx.response.send_message(f"Solde insuffisant : {_fmt_money(bank)} disponibles.", ephemeral=True)
+        return
+
+    prof["bank"] = bank - amt
+    prof["cash"] = int(prof.get("cash", 0)) + amt
+    save_profile(user.id, prof)
+
+    await itx.response.send_message(
+        f"🏦 ➜ 💵 **Retrait** : +{_fmt_money(amt)} en cash\n"
+        f"➡️ Banque : {_fmt_money(int(prof['bank']))} • Cash : {_fmt_money(int(prof['cash']))}"
+    )
+
+@bot.tree.command(name="dep", description="Déposer du cash vers la banque.")
+@app_commands.describe(montant='Montant (>0) ou "all"')
+async def dep_cmd(itx: discord.Interaction, montant: str):
+    user = itx.user
+    prof = _ensure_profile_skeleton(user.id)
+    prof = _ensure_economy_fields(prof)
+
+    cash = int(prof.get("cash", 0))
+    amt = _parse_amount_input(montant, cash)
+    if amt is None:
+        await itx.response.send_message('Montant invalide. Utilisez un entier > 0 ou "all".', ephemeral=True)
+        return
+    if cash <= 0:
+        await itx.response.send_message("Vous n'avez pas de cash à déposer.", ephemeral=True)
+        return
+    if amt > cash:
+        await itx.response.send_message(f"Cash insuffisant : {_fmt_money(cash)} disponibles.", ephemeral=True)
+        return
+
+    prof["cash"] = cash - amt
+    prof["bank"] = int(prof.get("bank", 0)) + amt
+    save_profile(user.id, prof)
+
+    await itx.response.send_message(
+        f"💵 ➜ 🏦 **Dépôt** : +{_fmt_money(amt)} en banque\n"
+        f"➡️ Banque : {_fmt_money(int(prof['bank']))} • Cash : {_fmt_money(int(prof['cash']))}"
+    )
+
+@bot.tree.command(name="pay", description="Payer un joueur (cash -> cash).")
+@app_commands.describe(beneficiaire="Membre à payer", montant="Montant (>0)")
+async def pay_cmd(itx: discord.Interaction, beneficiaire: discord.Member, montant: int):
+    payeur = itx.user
+    if payeur.id == beneficiaire.id:
+        await itx.response.send_message("On ne se paie pas soi-même…", ephemeral=True)
+        return
+    if montant is None or not isinstance(montant, int) or montant <= 0:
+        await itx.response.send_message("Montant invalide (entier > 0).", ephemeral=True)
+        return
+
+    prof_p = _ensure_profile_skeleton(payeur.id)
+    prof_p = _ensure_economy_fields(prof_p)
+    prof_b = _ensure_profile_skeleton(beneficiaire.id)
+    prof_b = _ensure_economy_fields(prof_b)
+
+    cash_p = int(prof_p.get("cash", 0))
+    if montant > cash_p:
+        await itx.response.send_message(f"Cash insuffisant. Vous avez {_fmt_money(cash_p)}.", ephemeral=True)
+        return
+
+    prof_p["cash"] = cash_p - montant
+    prof_b["cash"] = int(prof_b.get("cash", 0)) + montant
+    save_profile(payeur.id, prof_p)
+    save_profile(beneficiaire.id, prof_b)
+
+    await itx.response.send_message(
+        f"🤝 **Paiement envoyé** : {beneficiaire.mention} reçoit {_fmt_money(montant)} (cash).\n"
+        f"Votre nouveau cash : {_fmt_money(int(prof_p['cash']))}"
+    )
+
+@bot.tree.command(name="paycrime", description="Payer un joueur en argent sale (dirty -> dirty).")
+@app_commands.describe(beneficiaire="Membre à payer", montant="Montant (>0)")
+async def paycrime_cmd(itx: discord.Interaction, beneficiaire: discord.Member, montant: int):
+    payeur = itx.user
+    if payeur.id == beneficiaire.id:
+        await itx.response.send_message("On ne se paie pas soi-même…", ephemeral=True)
+        return
+    if montant is None or not isinstance(montant, int) or montant <= 0:
+        await itx.response.send_message("Montant invalide (entier > 0).", ephemeral=True)
+        return
+
+    prof_p = _ensure_profile_skeleton(payeur.id)
+    prof_p = _ensure_economy_fields(prof_p)
+    prof_b = _ensure_profile_skeleton(beneficiaire.id)
+    prof_b = _ensure_economy_fields(prof_b)
+
+    dirty_p = int(prof_p.get("dirty", 0))
+    if montant > dirty_p:
+        await itx.response.send_message(f"Argent sale insuffisant. Vous avez {_fmt_money(dirty_p)}.", ephemeral=True)
+        return
+
+    prof_p["dirty"] = dirty_p - montant
+    prof_b["dirty"] = int(prof_b.get("dirty", 0)) + montant
+    save_profile(payeur.id, prof_p)
+    save_profile(beneficiaire.id, prof_b)
+
+    await itx.response.send_message(
+        f"🕶️ **Paiement clandestin envoyé** : {beneficiaire.mention} reçoit {_fmt_money(montant)} (argent sale).\n"
+        f"Votre nouveau dirty : {_fmt_money(int(prof_p['dirty']))}"
+    )
+
 # ========= INVENTAIRE : ARMES =========
 
 ARMES_LISTE = [
