@@ -362,7 +362,7 @@ async def style_carte(itx: discord.Interaction, style: str):
 )
 async def generer_carte(
     itx: discord.Interaction,
-    cible: str,
+    cible: Optional[discord.Member] = None,
     prenom: str,
     nom: str,
     titres: str,
