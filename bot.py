@@ -1841,6 +1841,8 @@ def _session_build_embed(state: dict, guild_logo_bytes: Optional[bytes]) -> Tupl
         "channel_id": int,
     }
     """
+    now_paris = datetime.now(PARIS_TZ)
+    
     header = "🎭 | Nouvelle session RP"
     if state.get("titre"):
         header += f"\n« {state['titre']} »"
@@ -1854,13 +1856,15 @@ def _session_build_embed(state: dict, guild_logo_bytes: Optional[bytes]) -> Tupl
     heure_str = state.get("heure_str", "—")
 
    emb.add_field(
-    name="\u200b",  # caractère invisible
-    value=f"👑 **Organisateur** : {org_mention}\n"
-          f"⚜️ **PSN** : {psn}\n"
-          f"🗓️ **Date** : {date_str}\n"
-          f"⏰ **Heure de lancement** : {heure_str}",
-    inline=False
-)
+        name="\u200b",  # caractère invisible
+        value=(
+            f"👑 **Organisateur** : {org_mention}\n"
+            f"⚜️ **PSN** : {psn}\n"
+            f"🗓️ **Date** : {date_str}\n"
+            f"⏰ **Heure de lancement** : {heure_str}"
+        ),
+        inline=False
+    )
 
     def list_mentions(uids: List[int]) -> str:
         if not uids:
@@ -2144,6 +2148,7 @@ if __name__ == "__main__":
     if not TOKEN:
         raise RuntimeError("TOKEN manquant dans .env (UTF-8)")
     bot.run(TOKEN)
+
 
 
 
