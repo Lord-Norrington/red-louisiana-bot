@@ -2267,6 +2267,311 @@ async def session_cmd(
     except Exception:
         pass
 
+# ========= CASIER JUDICIAIRE & PRIMES =========
+
+def _ensure_casier_list(prof: dict) -> List[dict]:
+    """Garantit la présence d'une liste 'casier' dans le profil."""
+    casier = prof.get("casier")
+    if not isinstance(casier, list):
+        casier = []
+    prof["casier"] = casier
+    return casier
+
+def _total_prime_for_profile(prof: dict) -> int:
+    """Somme des primes actives dans le casier."""
+    casier = prof.get("casier") or []
+    total = 0
+    for entry in casier:
+        try:
+            p = int(entry.get("prime", 0) or 0)
+        except Exception:
+            p = 0
+        if p > 0:
+            total += p
+    return total
+
+# ---- /casier_ajouter ----
+
+@bot.tree.command(
+    name="casier_ajouter",
+    description="Ajouter une entrée au casier judiciaire d'un personnage (avec prime éventuelle)."
+)
+@app_commands.describe(
+    cible="Personnage concerné",
+    date_rp="Date RP (JJ/MM/AAAA)",
+    infraction="Description de l'infraction",
+    prime="Montant de la prime associée (peut être 0)"
+)
+async def casier_ajouter_cmd(
+    itx: discord.Interaction,
+    cible: discord.Member,
+    date_rp: str,
+    infraction: str,
+    prime: int
+):
+    """
+    Ajoute une infraction au casier de la cible, avec une prime associée (0 possible).
+    """
+    # On part du profil complet existant
+    prof = _ensure_profile_skeleton(cible.id)
+    casier = _ensure_casier_list(prof)
+
+    # Nettoyage des champs
+    date_rp = date_rp.strip()
+    infraction = infraction.strip()
+    try:
+        prime_val = int(prime)
+        if prime_val < 0:
+            prime_val = 0
+    except Exception:
+        prime_val = 0
+
+    entry = {
+        "date": date_rp,
+        "infraction": infraction,
+        "prime": prime_val,
+        "auteur": itx.user.id,  # celui qui a ajouté l'entrée
+    }
+    casier.append(entry)
+    prof["casier"] = casier
+    save_profile(cible.id, prof)
+
+    await itx.response.send_message(
+        f"✅ Entrée ajoutée au casier de {cible.mention} :\n"
+        f"• Date : **{date_rp}**\n"
+        f"• Infraction : **{infraction}**\n"
+        f"• Prime associée : **{_fmt_money(prime_val)}**"
+    )
+
+# ---- /casier ----
+
+@bot.tree.command(
+    name="casier",
+    description="Consulter le casier judiciaire d'un personnage."
+)
+@app_commands.describe(
+    cible="Personnage dont on consulte le casier (laisser vide pour votre propre casier)."
+)
+async def casier_cmd(
+    itx: discord.Interaction,
+    cible: Optional[discord.Member] = None
+):
+    target = cible or itx.user
+    prof = load_profile(target.id)
+    if not prof:
+        await itx.response.send_message(
+            f"Aucune fiche trouvée pour **{target.display_name}**.\n"
+            "Générez d’abord une carte avec `/generer_carte`.",
+            ephemeral=True
+        )
+        return
+
+    casier = prof.get("casier") or []
+    total_prime = _total_prime_for_profile(prof)
+
+    prenom = prof.get("prenom", "—")
+    nom = prof.get("nom", "—")
+
+    emb = discord.Embed(
+        title=f"Casier judiciaire — {prenom} {nom}",
+        color=discord.Color.dark_gold()
+    )
+
+    if not casier:
+        emb.description = "Aucune infraction enregistrée."
+    else:
+        lignes = []
+        for idx, entry in enumerate(casier, start=1):
+            date_rp = entry.get("date", "—")
+            inf = entry.get("infraction", "—")
+            try:
+                p = int(entry.get("prime", 0) or 0)
+            except Exception:
+                p = 0
+            if p > 0:
+                lignes.append(
+                    f"**{idx}. {date_rp}** — {inf}  *(Prime : {_fmt_money(p)})*"
+                )
+            else:
+                lignes.append(f"**{idx}. {date_rp}** — {inf}")
+        emb.description = "\n".join(lignes)
+
+    emb.add_field(
+        name="Total des primes actives",
+        value=_fmt_money(total_prime),
+        inline=False
+    )
+
+    await itx.response.send_message(embed=emb)
+
+# ---- /casier_effacer ----
+
+@bot.tree.command(
+    name="casier_effacer",
+    description="Effacer entièrement le casier judiciaire (et les primes) d'un personnage."
+)
+@app_commands.describe(
+    cible="Personnage dont on efface le casier."
+)
+async def casier_effacer_cmd(
+    itx: discord.Interaction,
+    cible: discord.Member
+):
+    prof = load_profile(cible.id)
+    if not prof:
+        await itx.response.send_message(
+            f"Aucune fiche trouvée pour **{cible.display_name}**.",
+            ephemeral=True
+        )
+        return
+
+    prof["casier"] = []
+    save_profile(cible.id, prof)
+
+    await itx.response.send_message(
+        f"🧾 Casier judiciaire de {cible.mention} **entièrement effacé** "
+        f"(infractions et primes associées)."
+    )
+
+# ---- /paye_prime ----
+
+ETAT_CHOICES = [
+    app_commands.Choice(name="Vivant", value="vivant"),
+    app_commands.Choice(name="Mort", value="mort"),
+]
+
+@bot.tree.command(
+    name="paye_prime",
+    description="Payer la prime d'un recherché à un chasseur de primes."
+)
+@app_commands.describe(
+    payeur="Compte qui verse la prime (Banque Royale, gouvernement, etc.)",
+    cible="Personnage recherché dont la prime est payée",
+    chasseur="Chasseur de prime qui reçoit la récompense",
+    etat="Cible ramenée vivante ou morte ?"
+)
+@app_commands.choices(etat=ETAT_CHOICES)
+async def paye_prime_cmd(
+    itx: discord.Interaction,
+    payeur: discord.Member,
+    cible: discord.Member,
+    chasseur: discord.Member,
+    etat: app_commands.Choice[str]
+):
+    # Profil de la cible
+    prof_cible = _ensure_profile_skeleton(cible.id)
+    casier = _ensure_casier_list(prof_cible)
+    total_prime = _total_prime_for_profile(prof_cible)
+
+    if total_prime <= 0:
+        await itx.response.send_message(
+            f"{cible.mention} n'a **aucune prime active** dans son casier.",
+            ephemeral=True
+        )
+        return
+
+    # Profils économiques
+    prof_payeur = _ensure_profile_skeleton(payeur.id)
+    prof_payeur = _ensure_economy_fields(prof_payeur)
+
+    prof_chasseur = _ensure_profile_skeleton(chasseur.id)
+    prof_chasseur = _ensure_economy_fields(prof_chasseur)
+
+    # Montant selon l'état de la cible
+    if etat.value == "vivant":
+        montant = total_prime                   # prime complète vivant
+    else:  # mort
+        montant = total_prime // 2             # moitié si ramené mort
+
+    if montant <= 0:
+        await itx.response.send_message(
+            "Le montant calculé de la prime est nul, opération annulée.",
+            ephemeral=True
+        )
+        return
+
+    # Ajuste les soldes (sur le compte bancaire)
+    prof_payeur["bank"] = int(prof_payeur.get("bank", 0)) - montant
+    prof_chasseur["bank"] = int(prof_chasseur.get("bank", 0)) + montant
+
+    # Met toutes les primes à 0 dans le casier de la cible
+    for entry in casier:
+        try:
+            p = int(entry.get("prime", 0) or 0)
+        except Exception:
+            p = 0
+        if p > 0:
+            entry["prime"] = 0
+    prof_cible["casier"] = casier
+
+    save_profile(payeur.id, prof_payeur)
+    save_profile(chasseur.id, prof_chasseur)
+    save_profile(cible.id, prof_cible)
+
+    etat_label = "ramené **vivant**" if etat.value == "vivant" else "ramené **mort**"
+    await itx.response.send_message(
+        f"💰 Prime payée pour {cible.mention} ({etat_label}) :\n"
+        f"• Montant versé à {chasseur.mention} : **{_fmt_money(montant)}** (sur son compte bancaire)\n"
+        f"• Compte de {payeur.mention} débité de **{_fmt_money(montant)}**\n"
+        f"• Toutes les primes de {cible.mention} ont été **annulées** dans son casier."
+    )
+
+# ---- /tableau_primes ----
+
+@bot.tree.command(
+    name="tableau_primes",
+    description="Afficher le tableau des primes en cours (par montant décroissant)."
+)
+async def tableau_primes_cmd(itx: discord.Interaction):
+    entries: List[Tuple[int, dict, int]] = []
+    all_prof = _iter_all_profiles()
+    for uid, prof in all_prof:
+        total_p = _total_prime_for_profile(prof)
+        if total_p > 0:
+            entries.append((uid, prof, total_p))
+
+    # Tri décroissant par montant de prime total
+    entries.sort(key=lambda t: t[2], reverse=True)
+
+    emb = discord.Embed(
+        title="Tableau des primes",
+        description=(
+            "Liste des primes actuellement en vigueur.\n\n"
+            "💡 La prime affichée correspond à la **capture vivante** du recherché.\n"
+            "Si le suspect est ramené **mort**, la récompense versée par `/paye_prime` "
+            "sera automatiquement réduite de moitié."
+        ),
+        color=discord.Color.dark_gold()
+    )
+
+    if not entries:
+        emb.add_field(
+            name="Aucune prime",
+            value="Aucune prime n'est actuellement enregistrée.",
+            inline=False
+        )
+    else:
+        lignes = []
+        for rang, (uid, prof, total_p) in enumerate(entries, start=1):
+            lignes.append(f"{rang}. <@{uid}> — {_fmt_money(total_p)}")
+        texte = "\n".join(lignes[:30])  # on limite à 30 lignes pour rester lisible
+        emb.add_field(
+            name="Primes actives",
+            value=texte,
+            inline=False
+        )
+
+    # Logo de la police en haut à droite (assets/Police.png)
+    police_logo_path = os.path.join(ASSETS_DIR, "Police.png")
+    file_obj = None
+    if os.path.exists(police_logo_path):
+        file_obj = discord.File(police_logo_path, filename="police.png")
+        emb.set_thumbnail(url="attachment://police.png")
+
+    if file_obj:
+        await itx.response.send_message(embed=emb, file=file_obj)
+    else:
+        await itx.response.send_message(embed=emb)
 
 # ========= SYNC & DÉMARRAGE =========
 
@@ -2336,6 +2641,7 @@ if __name__ == "__main__":
     if not TOKEN:
         raise RuntimeError("TOKEN manquant dans .env (UTF-8)")
     bot.run(TOKEN)
+
 
 
 
