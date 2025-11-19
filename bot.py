@@ -1315,7 +1315,7 @@ async def remove_property(itx: discord.Interaction,
 PERMIS_LISTE = [
     "Armes d'épaules","Armes lourdes","Armes longue distance",
     "Permis de chasse","Licence de Chasseur de Prime",
-    "Mandat Gouvernemental","Laisser Passez Gouvernemental",
+    "Mandat Gouvernemental","Laisser Passer Gouvernemental",
 ]
 PERMIS_CHOICES = [app_commands.Choice(name=nom, value=nom) for nom in PERMIS_LISTE]
 
@@ -2166,6 +2166,7 @@ if __name__ == "__main__":
     if not TOKEN:
         raise RuntimeError("TOKEN manquant dans .env (UTF-8)")
     bot.run(TOKEN)
+
 
 
 
