@@ -928,6 +928,66 @@ async def compte_cmd(itx: discord.Interaction, cible: Optional[discord.Member] =
     else:
         await itx.response.send_message(embed=emb, view=view)
 
+@bot.tree.command(
+    name="backup_now",
+    description="Forcer immédiatement une sauvegarde complète des profils et cartes."
+)
+async def backup_now_cmd(itx: discord.Interaction):
+
+    # Vérifier que tu as défini le canal backup dans ton code
+    backup_channel_id = BACKUP_CHANNEL_ID  # tu as déjà ça dans ton auto-backup
+    channel = bot.get_channel(backup_channel_id)
+
+    if channel is None:
+        await itx.response.send_message(
+            "❌ Impossible de trouver le salon de backup. Vérifie l’ID.",
+            ephemeral=True,
+        )
+        return
+
+    # On fabrique un zip temporaire
+    backup_filename = f"backup_now_{int(time.time())}.zip"
+    zip_path = os.path.join(BASE_DIR, backup_filename)
+
+    import zipfile
+
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as archive:
+        # Profils
+        if os.path.isdir(PROFILES_DIR):
+            for root, _, files in os.walk(PROFILES_DIR):
+                for f in files:
+                    full_path = os.path.join(root, f)
+                    relative_path = os.path.relpath(full_path, BASE_DIR)
+                    archive.write(full_path, relative_path)
+
+        # Cartes
+        if os.path.isdir(CARDS_DIR):
+            for root, _, files in os.walk(CARDS_DIR):
+                for f in files:
+                    full_path = os.path.join(root, f)
+                    relative_path = os.path.relpath(full_path, BASE_DIR)
+                    archive.write(full_path, relative_path)
+
+    # Envoi du fichier dans le salon
+    file = discord.File(zip_path, filename=backup_filename)
+
+    await channel.send(
+        f"📦 **Sauvegarde forcée manuellement** demandée par {itx.user.mention}.",
+        file=file
+    )
+
+    await itx.response.send_message(
+        "✅ Sauvegarde effectuée et envoyée dans le salon de backup.",
+        ephemeral=True
+    )
+
+    # Supprimer la version locale pour ne pas remplir Render
+    try:
+        os.remove(zip_path)
+    except:
+        pass
+
+
 
 # ========= COMMANDES ÉCONOMIE =========
 
@@ -2793,6 +2853,7 @@ if __name__ == "__main__":
     if not TOKEN:
         raise RuntimeError("TOKEN manquant dans .env (UTF-8)")
     bot.run(TOKEN)
+
 
 
 
