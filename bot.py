@@ -1986,7 +1986,7 @@ class RetardModal(discord.ui.Modal, title="Indiquer votre retard (≈ minutes)")
         self.minutes = discord.ui.TextInput(
             label="Environ combien de minutes de retard ?",
             placeholder="Ex : 10",
-            required=False,
+            required=True,
             max_length=3
         )
         self.add_item(self.minutes)
@@ -2144,6 +2144,7 @@ if __name__ == "__main__":
     if not TOKEN:
         raise RuntimeError("TOKEN manquant dans .env (UTF-8)")
     bot.run(TOKEN)
+
 
 
 
