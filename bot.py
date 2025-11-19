@@ -1889,26 +1889,10 @@ def _session_build_embed(state: dict, guild_logo_bytes: Optional[bytes]) -> Tupl
     absent_ids  = sorted(list(state.get("absent", set())))
     late_map    = dict(state.get("late", {}))
 
-    emb.add_field(
-        name=f"Membres présents ({len(present_ids)}) :",
-        value=list_mentions(present_ids),
-        inline=False
-    )
-    emb.add_field(
-        name=f"Membres en retard ({len(late_map)}) :",
-        value=list_late(late_map),
-        inline=False
-    )
-    emb.add_field(
-        name=f"Membres indécis ({len(maybe_ids)}) :",
-        value=list_mentions(maybe_ids),
-        inline=False
-    )
-    emb.add_field(
-        name=f"Membres absents ({len(absent_ids)}) :",
-        value=list_mentions(absent_ids),
-        inline=False
-    )
+    emb.add_field(name=f"Membres présents ({len(present_ids)}) :", value=list_mentions(present_ids), inline=False)
+    emb.add_field(name=f"Membres en retard ({len(late_map)}) :", value=list_late(late_map), inline=False)
+    emb.add_field(name=f"Membres indécis ({len(maybe_ids)}) :", value=list_mentions(maybe_ids), inline=False)
+    emb.add_field(name=f"Membres absents ({len(absent_ids)}) :", value=list_mentions(absent_ids), inline=False)
 
     emb.set_footer(
         text=f"Dernière mise à jour : {now_paris.strftime('%H:%M')}  •  ID session : #{state.get('message_id') or '—'}"
@@ -1926,6 +1910,7 @@ def _session_build_embed(state: dict, guild_logo_bytes: Optional[bytes]) -> Tupl
             emb.set_thumbnail(url="attachment://guild_icon.png")
 
     return emb, file_obj
+
 
 
 class SessionView(discord.ui.View):
@@ -2048,9 +2033,7 @@ async def session_cmd(
     psn: str,
     titre: Optional[str] = None
 ):
-    await itx.response.defer()
-
-    # Prépare l'état
+    # Prépare l'état de la session
     state = {
         "titre": (titre.strip() if titre else None),
         "date_str": date.strip(),
@@ -2066,7 +2049,7 @@ async def session_cmd(
         "channel_id": itx.channel.id,
     }
 
-    # Logo guilde
+    # Logo de la guilde
     logo_bytes = None
     try:
         if itx.guild and itx.guild.icon:
@@ -2077,26 +2060,45 @@ async def session_cmd(
     emb, file_obj = _session_build_embed(state, logo_bytes)
     view = SessionView(message_id=None, channel_id=itx.channel.id)
 
-    # Ping @everyone automatiquement
+    # Ping @everyone
     allowed = discord.AllowedMentions(everyone=True, users=True, roles=True)
     content = "@everyone"
 
+    # ✅ Réponse directe à l'interaction (pas de defer, pas de followup ici)
     if file_obj:
-        msg = await itx.followup.send(content=content, embed=emb, file=file_obj, view=view, allowed_mentions=allowed)
+        await itx.response.send_message(
+            content=content,
+            embed=emb,
+            file=file_obj,
+            view=view,
+            allowed_mentions=allowed
+        )
     else:
-        msg = await itx.followup.send(content=content, embed=emb, view=view, allowed_mentions=allowed)
+        await itx.response.send_message(
+            content=content,
+            embed=emb,
+            view=view,
+            allowed_mentions=allowed
+        )
 
-    # Finalise état + vue
+    # On récupère le message créé par Discord
+    msg = await itx.original_response()
+
+    # On enregistre l'ID de session
     state["message_id"] = msg.id
     SESSIONS[msg.id] = state
     view.message_id = msg.id
 
-    # Rééditer pour afficher l'ID en footer
+    # On réédite juste pour afficher l'ID dans le footer (facultatif)
     emb2, file_obj2 = _session_build_embed(state, logo_bytes)
     try:
-        await msg.edit(embed=emb2, attachments=[file_obj2] if file_obj2 else [], view=view)
+        if file_obj2:
+            await msg.edit(embed=emb2, attachments=[file_obj2], view=view)
+        else:
+            await msg.edit(embed=emb2, view=view)
     except Exception:
         pass
+
 
 # ========= SYNC & DÉMARRAGE =========
 
@@ -2166,6 +2168,7 @@ if __name__ == "__main__":
     if not TOKEN:
         raise RuntimeError("TOKEN manquant dans .env (UTF-8)")
     bot.run(TOKEN)
+
 
 
 
