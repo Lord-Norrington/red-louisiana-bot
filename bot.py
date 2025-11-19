@@ -9,6 +9,10 @@
 import os, io, asyncio, mimetypes, json, time, random, math, zipfile
 from typing import Optional, Dict, List, Tuple
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
+PARIS_TZ = ZoneInfo("Europe/Paris")
+
 
 import discord
 from discord import app_commands
@@ -1851,7 +1855,8 @@ def _session_build_embed(state: dict, guild_logo_bytes: Optional[bytes]) -> Tupl
 
     emb.add_field(
         name="",
-        value=f"👑 **Organisateur** : {org_mention}  •  **PSN** : {psn}\n"
+        value=f"👑 **Organisateur** : {org_mention}\n"
+              f"⚜️**PSN** : {psn}\n"
               f"🗓️ **Date** : {date_str}\n"
               f"⏰ **Heure de lancement** : {heure_str}",
         inline=False
@@ -1884,7 +1889,9 @@ def _session_build_embed(state: dict, guild_logo_bytes: Optional[bytes]) -> Tupl
     emb.add_field(name=f"Membres indécis ({len(maybe_ids)}) :", value=list_mentions(maybe_ids), inline=False)
     emb.add_field(name=f"Membres absents ({len(absent_ids)}) :", value=list_mentions(absent_ids), inline=False)
 
-    emb.set_footer(text=f"Dernière mise à jour : {datetime.now().strftime('%H:%M')}  •  ID session : #{state.get('message_id') or '—'}")
+    emb.set_footer(
+        text=f"Dernière mise à jour : {now_paris.strftime('%H:%M')}  •  ID session : #{state.get('message_id') or '—'}"
+)
 
     # Miniature : logo guilde si dispo, sinon fallback assets/banque.png
     file_obj = None
@@ -2028,7 +2035,7 @@ async def session_cmd(
         "heure_str": heure.strip(),
         "organizer_id": organisateur.id,
         "organizer_psn": psn.strip(),
-        "created_at": datetime.now(),
+        "created_at": datetime.now(PARIS_TZ),
         "present": set(),
         "maybe": set(),
         "absent": set(),
@@ -2137,6 +2144,7 @@ if __name__ == "__main__":
     if not TOKEN:
         raise RuntimeError("TOKEN manquant dans .env (UTF-8)")
     bot.run(TOKEN)
+
 
 
 
