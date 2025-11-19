@@ -1842,10 +1842,11 @@ def _session_build_embed(state: dict, guild_logo_bytes: Optional[bytes]) -> Tupl
     }
     """
     now_paris = datetime.now(PARIS_TZ)
-    
+
     header = "🎭 | Nouvelle session RP"
     if state.get("titre"):
         header += f"\n« {state['titre']} »"
+
     emb = discord.Embed(title=header, color=discord.Color.dark_gold())
     emb.description = "Veuillez voter ci-dessous !"
 
@@ -1855,7 +1856,7 @@ def _session_build_embed(state: dict, guild_logo_bytes: Optional[bytes]) -> Tupl
     date_str = state.get("date_str", "—")
     heure_str = state.get("heure_str", "—")
 
-   emb.add_field(
+    emb.add_field(
         name="\u200b",  # caractère invisible
         value=(
             f"👑 **Organisateur** : {org_mention}\n"
@@ -1888,14 +1889,30 @@ def _session_build_embed(state: dict, guild_logo_bytes: Optional[bytes]) -> Tupl
     absent_ids  = sorted(list(state.get("absent", set())))
     late_map    = dict(state.get("late", {}))
 
-    emb.add_field(name=f"Membres présents ({len(present_ids)}) :", value=list_mentions(present_ids), inline=False)
-    emb.add_field(name=f"Membres en retard ({len(late_map)}) :", value=list_late(late_map), inline=False)
-    emb.add_field(name=f"Membres indécis ({len(maybe_ids)}) :", value=list_mentions(maybe_ids), inline=False)
-    emb.add_field(name=f"Membres absents ({len(absent_ids)}) :", value=list_mentions(absent_ids), inline=False)
+    emb.add_field(
+        name=f"Membres présents ({len(present_ids)}) :",
+        value=list_mentions(present_ids),
+        inline=False
+    )
+    emb.add_field(
+        name=f"Membres en retard ({len(late_map)}) :",
+        value=list_late(late_map),
+        inline=False
+    )
+    emb.add_field(
+        name=f"Membres indécis ({len(maybe_ids)}) :",
+        value=list_mentions(maybe_ids),
+        inline=False
+    )
+    emb.add_field(
+        name=f"Membres absents ({len(absent_ids)}) :",
+        value=list_mentions(absent_ids),
+        inline=False
+    )
 
     emb.set_footer(
         text=f"Dernière mise à jour : {now_paris.strftime('%H:%M')}  •  ID session : #{state.get('message_id') or '—'}"
-)
+    )
 
     # Miniature : logo guilde si dispo, sinon fallback assets/banque.png
     file_obj = None
@@ -1909,6 +1926,7 @@ def _session_build_embed(state: dict, guild_logo_bytes: Optional[bytes]) -> Tupl
             emb.set_thumbnail(url="attachment://guild_icon.png")
 
     return emb, file_obj
+
 
 class SessionView(discord.ui.View):
     def __init__(self, message_id: Optional[int], channel_id: int):
@@ -2148,6 +2166,7 @@ if __name__ == "__main__":
     if not TOKEN:
         raise RuntimeError("TOKEN manquant dans .env (UTF-8)")
     bot.run(TOKEN)
+
 
 
 
