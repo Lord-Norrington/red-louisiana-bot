@@ -6,13 +6,13 @@
 # Outils: /sync
 # Sessions RP: /session (embed + boutons + modale "retard", @everyone auto)
 
-import os, io, asyncio, mimetypes, json, time, random, math
+import os, io, asyncio, mimetypes, json, time, random, math, zipfile
 from typing import Optional, Dict, List, Tuple
 from datetime import datetime
 
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 from dotenv import load_dotenv
 
 # ---------- Pillow ----------
@@ -30,6 +30,16 @@ PROFILES_DIR = os.path.join(BASE_DIR, "profiles")
 os.makedirs(ASSETS_DIR, exist_ok=True)
 os.makedirs(CARDS_DIR,  exist_ok=True)
 os.makedirs(PROFILES_DIR, exist_ok=True)
+
+# ---------- Sauvegardes automatiques ----------
+# Salon #backup-louisiana
+BACKUP_CHANNEL_ID = 1440672653294960650
+
+# Dossiers qui contiennent les données importantes du bot
+BACKUP_PATHS = [
+    CARDS_DIR,
+    PROFILES_DIR,
+]
 
 FONT_PATH  = os.path.join(ASSETS_DIR, "EBGaramond-Regular.ttf")  # optionnel
 WM_PATH    = os.path.join(ASSETS_DIR, "armoiries.png")           # image d'armoiries
@@ -75,6 +85,51 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 def embed(t: str, d: str=""):
     return discord.Embed(title=t, description=d, color=discord.Color.dark_gold())
+
+# ---------- Tâche de sauvegarde automatique vers Discord ----------
+
+def build_backup_bytes() -> io.BytesIO:
+    """Crée un ZIP en mémoire avec les cartes + profils."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for path in BACKUP_PATHS:
+            if not os.path.exists(path):
+                continue
+            if os.path.isdir(path):
+                for root, dirs, files in os.walk(path):
+                    for fname in files:
+                        full = os.path.join(root, fname)
+                        # on enregistre un chemin relatif propre dans le zip
+                        arcname = os.path.relpath(full, BASE_DIR)
+                        z.write(full, arcname)
+            else:
+                arcname = os.path.relpath(path, BASE_DIR)
+                z.write(path, arcname)
+    buf.seek(0)
+    return buf
+
+@tasks.loop(minutes=60)  # une sauvegarde toutes les heures
+async def auto_backup():
+    """Envoie régulièrement un ZIP des données dans #backup-louisiana."""
+    if BACKUP_CHANNEL_ID == 0:
+        return
+
+    channel = bot.get_channel(BACKUP_CHANNEL_ID)
+    if channel is None:
+        # si le cache n'est pas encore prêt, on attend le prochain tour
+        return
+
+    buf = build_backup_bytes()
+    ts = datetime.utcnow().strftime("%Y-%m-%d_%H-%M")
+    await channel.send(
+        content=f"Backup automatique Red Louisiana — {ts} (UTC)",
+        file=discord.File(buf, filename=f"backup_red_louisiana_{ts}.zip"),
+        allowed_mentions=discord.AllowedMentions.none(),
+    )
+
+@auto_backup.before_loop
+async def before_auto_backup():
+    await bot.wait_until_ready()
 
 # ---------- Paramètres carte ----------
 CANVAS_W, CANVAS_H = 1600, 1000
@@ -2074,10 +2129,14 @@ async def on_member_remove(member: discord.Member):
 @bot.event
 async def on_ready():
     print(f"Connecté en tant que {bot.user} (ID: {bot.user.id})")
+    # Démarre la sauvegarde automatique si ce n'est pas déjà le cas
+    if not auto_backup.is_running():
+        auto_backup.start()
 
 if __name__ == "__main__":
     if not TOKEN:
         raise RuntimeError("TOKEN manquant dans .env (UTF-8)")
     bot.run(TOKEN)
+
 
 
