@@ -1893,6 +1893,158 @@ async def work_cmd(itx: discord.Interaction):
         f"Nouveau solde banque : **{_fmt_money(prof['bank'])}**"
     )
 
+
+@bot.tree.command(name="impot", description="Calculer et prélever l'impôt (ou verser le RSA Royal) sur un revenu déclaré.")
+@app_commands.describe(
+    contribuable="Personne qui déclare ses revenus (celle qui paie l'impôt ou reçoit le RSA)",
+    salaire="Revenu hebdomadaire déclaré (en francs, entier > 0)",
+    percepteur="Compte qui reçoit l'impôt ou paie le RSA (souvent la Banque Royale)"
+)
+async def impot_cmd(
+    itx: discord.Interaction,
+    contribuable: discord.Member,
+    salaire: int,
+    percepteur: discord.Member
+):
+    if salaire <= 0:
+        await itx.response.send_message(
+            "Le salaire doit être un entier **strictement positif**.",
+            ephemeral=True
+        )
+        return
+
+    # Récupération / initialisation des profils
+    prof_c = _ensure_profile_skeleton(contribuable.id)
+    prof_c = _ensure_economy_fields(prof_c)
+
+    prof_p = _ensure_profile_skeleton(percepteur.id)
+    prof_p = _ensure_economy_fields(prof_p)
+
+    # Préparation des valeurs de base
+    bank_c_before = int(prof_c.get("bank", 0))
+    bank_p_before = int(prof_p.get("bank", 0))
+
+    # Détermination de la tranche et du taux
+    rsa_mode = False
+    taux_pct = 0
+    impot = 0  # montant d'impôt ou d'aide (positif en valeur absolue)
+
+    if salaire < 400:
+        # RSA ROYAL
+        rsa_mode = True
+        taux_pct = 0
+        impot = 100  # aide fixe
+        # Contribuable gagne 100, percepteur perd 100
+        prof_c["bank"] = bank_c_before + impot
+        prof_p["bank"] = bank_p_before - impot
+    else:
+        # Barème d'impôt classique
+        if salaire < 500:
+            taux_pct = 5
+        elif salaire < 1200:
+            taux_pct = 15
+        elif salaire < 2000:
+            taux_pct = 20
+        else:
+            taux_pct = 30
+
+        # Calcul de l'impôt dû
+        impot = math.floor(salaire * taux_pct / 100)
+
+        # Débits / crédits (solde négatif autorisé)
+        prof_c["bank"] = bank_c_before - impot
+        prof_p["bank"] = bank_p_before + impot
+
+    # Sauvegarde des profils
+    save_profile(contribuable.id, prof_c)
+    save_profile(percepteur.id, prof_p)
+
+    bank_c_after = int(prof_c.get("bank", 0))
+    bank_p_after = int(prof_p.get("bank", 0))
+
+    # Construction de l'embed récapitulatif
+    titre = "DÉCLARATION D’IMPÔT — Banque Royale de France"
+    emb = discord.Embed(
+        title=titre,
+        description="Traitement d’une déclaration de revenus.",
+        color=discord.Color.dark_gold()
+    )
+
+    emb.add_field(
+        name="Contribuable",
+        value=contribuable.mention,
+        inline=True
+    )
+    emb.add_field(
+        name="Percepteur / Trésor",
+        value=percepteur.mention,
+        inline=True
+    )
+    emb.add_field(
+        name="Revenus déclarés",
+        value=_fmt_money(salaire),
+        inline=False
+    )
+
+    if rsa_mode:
+        # Cas RSA Royal
+        emb.add_field(
+            name="Tranche & taux appliqué",
+            value="Moins de 400 ₣ → **RSA Royal (0 % d’impôt)**",
+            inline=False
+        )
+        emb.add_field(
+            name="Aide / impôt",
+            value=f"Aide accordée : **RSA Royal +{_fmt_money(impot)}** pour {contribuable.mention}.",
+            inline=False
+        )
+        mouvements = (
+            f"• Compte de {contribuable.mention} : "
+            f"{_fmt_money(bank_c_before)} ➜ **{_fmt_money(bank_c_after)}**\n"
+            f"• Compte de {percepteur.mention} : "
+            f"{_fmt_money(bank_p_before)} ➜ **{_fmt_money(bank_p_after)}**"
+        )
+    else:
+        # Cas impôt classique
+        emb.add_field(
+            name="Tranche & taux appliqué",
+            value=f"Taux appliqué : **{taux_pct} %**",
+            inline=False
+        )
+        emb.add_field(
+            name="Impôt dû",
+            value=f"Montant de l’impôt : **{_fmt_money(impot)}**",
+            inline=False
+        )
+        mouvements = (
+            f"• Compte de {contribuable.mention} : "
+            f"{_fmt_money(bank_c_before)} ➜ **{_fmt_money(bank_c_after)}**\n"
+            f"• Compte de {percepteur.mention} : "
+            f"{_fmt_money(bank_p_before)} ➜ **{_fmt_money(bank_p_after)}**"
+        )
+
+    emb.add_field(
+        name="Mouvements de comptes",
+        value=mouvements,
+        inline=False
+    )
+
+    # Logo Banque Royale en haut à droite si disponible
+    file_obj = None
+    logo_path = os.path.join(ASSETS_DIR, "banque.png")
+    if os.path.exists(logo_path):
+        try:
+            file_obj = discord.File(logo_path, filename="banque.png")
+            emb.set_thumbnail(url="attachment://banque.png")
+        except Exception:
+            file_obj = None
+
+    if file_obj:
+        await itx.response.send_message(embed=emb, file=file_obj)
+    else:
+        await itx.response.send_message(embed=emb)
+
+
 # ========= LEADERBOARD =========
 
 def _iter_all_profiles() -> List[Tuple[int, dict]]:
@@ -2641,6 +2793,7 @@ if __name__ == "__main__":
     if not TOKEN:
         raise RuntimeError("TOKEN manquant dans .env (UTF-8)")
     bot.run(TOKEN)
+
 
 
 
