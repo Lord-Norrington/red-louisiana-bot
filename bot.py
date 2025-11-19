@@ -345,6 +345,10 @@ def _ensure_profile_skeleton(user_id: int) -> dict:
     prof["inventaire"].setdefault("permis", {})
     prof.setdefault("proprietes", {})
     prof.setdefault("argent_total", 0)
+    prof.setdefault("compte_bloque", False)
+    # (optionnel) infos de dernière décision
+    prof.setdefault("compte_last_editor_id", None)
+    prof.setdefault("compte_last_updated", None)
     return prof
 
 def _set_arme_count(armes_dict: Dict[str, int], item: str, new_count: int):
@@ -885,6 +889,46 @@ async def bal(itx: discord.Interaction, cible: Optional[discord.Member] = None):
     except Exception:
         await itx.response.send_message(embed=embed_msg)
 
+
+@bot.tree.command(
+    name="compte",
+    description="Afficher et gérer l'état de blocage d'un compte bancaire (ouvert/bloqué)."
+)
+@app_commands.describe(
+    cible="Titulaire du compte (laisser vide pour votre propre compte)."
+)
+async def compte_cmd(itx: discord.Interaction, cible: Optional[discord.Member] = None):
+    target = cible or itx.user
+
+    # On s'assure que le profil existe et est cohérent
+    prof = _ensure_profile_skeleton(target.id)
+    prof = _ensure_economy_fields(prof)
+
+    # Si jamais la clé n'existe pas encore, par défaut : compte ouvert
+    if "compte_bloque" not in prof:
+        prof["compte_bloque"] = False
+        save_profile(target.id, prof)
+
+    # Construire l'embed + logo de la banque
+    emb, file_obj = _build_compte_embed_for_user(
+        target_id=target.id,
+        prof=prof,
+        guild=itx.guild
+    )
+
+    # Vue avec le bouton pour basculer (bloquer / réouvrir)
+    view = CompteView(
+        target_id=target.id,
+        initial_blocked=bool(prof.get("compte_bloque", False))
+    )
+
+    # Envoi du message
+    if file_obj:
+        await itx.response.send_message(embed=emb, file=file_obj, view=view)
+    else:
+        await itx.response.send_message(embed=emb, view=view)
+
+
 # ========= COMMANDES ÉCONOMIE =========
 
 WALLETS_CHOICES = [
@@ -959,6 +1003,15 @@ async def remove_money(
         f"→ Total (cash+banque+sale) : **{_fmt_money(total)}**"
     )
 
+# Message standard si le compte est bloqué
+async def _reply_account_blocked(itx: discord.Interaction):
+    await itx.response.send_message(
+        "⚠️ Votre compte est actuellement **bloqué par la Banque Royale**.\n"
+        "Vous ne pouvez plus effectuer d'opérations bancaires (dépôt, retrait, paiement en cash).",
+        ephemeral=True
+    )
+
+
 # ---------- ÉCONOMIE : WITH / DEP / PAY / PAYCRIME ----------
 
 def _parse_amount_input(txt: str, available: int) -> Optional[int]:
@@ -985,6 +1038,12 @@ async def with_cmd(itx: discord.Interaction, montant: str):
     user = itx.user
     prof = _ensure_profile_skeleton(user.id)
     prof = _ensure_economy_fields(prof)
+
+    # 🔒 Si le compte est bloqué : refus
+    if prof.get("compte_bloque"):
+        await _reply_account_blocked(itx)
+        return
+
 
     bank = int(prof.get("bank", 0))
     amt = _parse_amount_input(montant, bank)
@@ -1013,6 +1072,11 @@ async def dep_cmd(itx: discord.Interaction, montant: str):
     user = itx.user
     prof = _ensure_profile_skeleton(user.id)
     prof = _ensure_economy_fields(prof)
+
+    # 🔒 Compte bloqué ?
+    if prof.get("compte_bloque"):
+        await _reply_account_blocked(itx)
+        return
 
     cash = int(prof.get("cash", 0))
     amt = _parse_amount_input(montant, cash)
@@ -1048,6 +1112,12 @@ async def pay_cmd(itx: discord.Interaction, beneficiaire: discord.Member, montan
 
     prof_p = _ensure_profile_skeleton(payeur.id)
     prof_p = _ensure_economy_fields(prof_p)
+
+    # 🔒 Compte bloqué ?
+    if prof.get("compte_bloque"):
+        await _reply_account_blocked(itx)
+        return
+        
     prof_b = _ensure_profile_skeleton(beneficiaire.id)
     prof_b = _ensure_economy_fields(prof_b)
 
@@ -1541,6 +1611,104 @@ async def give_item_item_autocomplete(interaction: discord.Interaction, current:
 
     keys.sort()
     return [app_commands.Choice(name=k, value=k) for k in keys[:25]]
+
+
+def _build_compte_embed_for_user(
+    target_id: int,
+    prof: dict,
+    guild: Optional[discord.Guild]
+) -> Tuple[discord.Embed, Optional[discord.File]]:
+    member = guild.get_member(target_id) if guild else None
+    display_name = member.display_name if member else f"ID {target_id}"
+    mention = member.mention if member else f"<@{target_id}>"
+
+    prenom = prof.get("prenom", "—")
+    nom = prof.get("nom", "—")
+    metier = prof.get("metier", "—")
+
+    bloque = bool(prof.get("compte_bloque", False))
+    if bloque:
+        etat_txt = "🔴 **Compte BLOQUÉ**"
+    else:
+        etat_txt = "🟢 **Compte OUVERT**"
+
+    emb = discord.Embed(
+        title="BANQUE ROYALE DE FRANCE — Gestion de compte",
+        color=discord.Color.dark_gold()
+    )
+
+    emb.add_field(name="Titulaire", value=f"{prenom} {nom}\n{mention}", inline=False)
+    emb.add_field(name="Métier", value=metier or "—", inline=True)
+    emb.add_field(name="État du compte", value=etat_txt, inline=False)
+
+    last_editor_id = prof.get("compte_last_editor_id")
+    last_updated = prof.get("compte_last_updated")
+
+    if last_editor_id and last_updated:
+        try:
+            dt = datetime.fromisoformat(last_updated)
+            dt_str = dt.astimezone(PARIS_TZ).strftime("%d/%m/%Y %H:%M")
+        except Exception:
+            dt_str = last_updated
+        footer_text = f"Dernière décision : <@{last_editor_id}> — {dt_str}"
+    else:
+        footer_text = "Aucune décision enregistrée pour ce compte."
+
+    emb.set_footer(text=footer_text)
+
+    # Logo de la banque
+    file_obj = None
+    logo_path = os.path.join(ASSETS_DIR, "banque.png")
+    if os.path.exists(logo_path):
+        file_obj = discord.File(logo_path, filename="banque.png")
+        emb.set_thumbnail(url="attachment://banque.png")
+
+    return emb, file_obj
+class CompteView(discord.ui.View):
+    def __init__(self, target_id: int, initial_blocked: bool):
+        super().__init__(timeout=120)
+        self.target_id = target_id
+        self._initial_blocked = initial_blocked
+        for child in self.children:
+            if isinstance(child, discord.ui.Button):
+                self._set_button_appearance(child, initial_blocked)
+
+    def _set_button_appearance(self, btn: discord.ui.Button, blocked: bool):
+        if blocked:
+            btn.label = "🔓 Réouvrir le compte"
+            btn.style = discord.ButtonStyle.success
+        else:
+            btn.label = "🔒 Bloquer le compte"
+            btn.style = discord.ButtonStyle.danger
+
+    @discord.ui.button(label="🔒 Bloquer le compte", style=discord.ButtonStyle.danger)
+    async def toggle_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        prof = _ensure_profile_skeleton(self.target_id)
+        prof = _ensure_economy_fields(prof)
+
+        current = bool(prof.get("compte_bloque", False))
+        new_state = not current
+        prof["compte_bloque"] = new_state
+
+        now = datetime.now(PARIS_TZ)
+        prof["compte_last_editor_id"] = interaction.user.id
+        prof["compte_last_updated"] = now.isoformat()
+
+        save_profile(self.target_id, prof)
+
+        emb, file_obj = _build_compte_embed_for_user(
+            self.target_id,
+            prof,
+            interaction.guild
+        )
+
+        self._set_button_appearance(button, new_state)
+
+        if file_obj:
+            await interaction.response.edit_message(embed=emb, attachments=[file_obj], view=self)
+        else:
+            await interaction.response.edit_message(embed=emb, view=self)
+
 
 
 # ========= JEU / RISQUE =========
@@ -2168,6 +2336,7 @@ if __name__ == "__main__":
     if not TOKEN:
         raise RuntimeError("TOKEN manquant dans .env (UTF-8)")
     bot.run(TOKEN)
+
 
 
 
