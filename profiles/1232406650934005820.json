@@ -1,0 +1,34 @@
+{
+  "user_id": 1232406650934005820,
+  "prenom": "Baptiste",
+  "nom": "DELMONT",
+  "titres": "-",
+  "genre": "Homme",
+  "date_naissance": "06-04-1838",
+  "lieu_naissance": "Paris",
+  "nationalite": "FR",
+  "metier": "Marshal de Louisiane",
+  "inventaire": {
+    "armes": {
+      "Revolver Cattleman": 1,
+      "Couteau de chasse": 1,
+      "Revolver Navy": 2,
+      "Lancaster": 1,
+      "Fusil à pompe": 1,
+      "Fusil à verrou": 1
+    },
+    "chevaux": {
+      "Turkoman": 1
+    },
+    "permis": {}
+  },
+  "argent_total": 0,
+  "proprietes": {},
+  "compte_bloque": false,
+  "compte_last_editor_id": null,
+  "compte_last_updated": null,
+  "cash": 0,
+  "bank": 500,
+  "dirty": 0,
+  "cooldowns": {}
+}

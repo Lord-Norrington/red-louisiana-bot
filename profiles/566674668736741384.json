@@ -1,0 +1,16 @@
+{
+  "inventaire": {
+    "armes": {},
+    "chevaux": {},
+    "permis": {}
+  },
+  "proprietes": {},
+  "argent_total": 0,
+  "compte_bloque": false,
+  "compte_last_editor_id": null,
+  "compte_last_updated": null,
+  "cash": 0,
+  "bank": 0,
+  "dirty": 0,
+  "cooldowns": {}
+}

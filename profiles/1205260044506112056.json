@@ -1,0 +1,28 @@
+{
+  "user_id": 1205260044506112056,
+  "prenom": "Henry",
+  "nom": "Crawford",
+  "titres": "-",
+  "genre": "Homme",
+  "date_naissance": "05-03-184p",
+  "lieu_naissance": "Saint-Denis",
+  "nationalite": "Française",
+  "metier": "Secrétaire du cabinet Royal",
+  "inventaire": {
+    "armes": {
+      "Revolver Cattleman": 1,
+      "Couteau de chasse": 1
+    },
+    "chevaux": {},
+    "permis": {}
+  },
+  "argent_total": 0,
+  "proprietes": {},
+  "compte_bloque": false,
+  "compte_last_editor_id": null,
+  "compte_last_updated": null,
+  "cash": 0,
+  "bank": 500,
+  "dirty": 0,
+  "cooldowns": {}
+}

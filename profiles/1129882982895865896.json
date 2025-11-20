@@ -1,0 +1,39 @@
+{
+  "user_id": 1129882982895865896,
+  "prenom": "Charles",
+  "nom": "de FRANCE",
+  "titres": "Roi de France",
+  "genre": "Homme",
+  "date_naissance": "27-07-1830",
+  "lieu_naissance": "Paris - France",
+  "nationalite": "FR",
+  "metier": "Roi de France",
+  "inventaire": {
+    "armes": {
+      "Revolver Cattleman": 1,
+      "Couteau de chasse": 1,
+      "Revolver Navy": 1
+    },
+    "chevaux": {
+      "Morgan": 1,
+      "Tennessee Walker": 1,
+      "Turkoman": 1
+    },
+    "permis": {
+      "Laisser Passer Gouvernemental": "valide",
+      "Mandat Gouvernemental": "valide"
+    }
+  },
+  "argent_total": 0,
+  "proprietes": {
+    "Palais Royal de Saint Denis": "acquise",
+    "Bourbon's Manor": "acquise"
+  },
+  "compte_bloque": false,
+  "compte_last_editor_id": null,
+  "compte_last_updated": null,
+  "cash": 0,
+  "bank": 63636,
+  "dirty": 0,
+  "cooldowns": {}
+}
