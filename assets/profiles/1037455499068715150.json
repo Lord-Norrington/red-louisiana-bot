@@ -1,0 +1,28 @@
+{
+  "user_id": 1037455499068715150,
+  "prenom": "Jonathan Lincoln",
+  "nom": "Sparrow",
+  "titres": "Baron de Birmingham",
+  "genre": "Homme",
+  "date_naissance": "12-02-1832",
+  "lieu_naissance": "Manchester",
+  "nationalite": "FR - UK",
+  "metier": "Directeur Général",
+  "inventaire": {
+    "armes": {
+      "Revolver Cattleman": 1,
+      "Couteau de chasse": 1
+    },
+    "chevaux": {},
+    "permis": {}
+  },
+  "argent_total": 0,
+  "proprietes": {},
+  "compte_bloque": false,
+  "compte_last_editor_id": null,
+  "compte_last_updated": null,
+  "cash": 0,
+  "bank": 500,
+  "dirty": 0,
+  "cooldowns": {}
+}
